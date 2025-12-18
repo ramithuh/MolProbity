@@ -1,235 +1,117 @@
-Updated Jan 02 2024
-
 # Welcome to MolProbity!!
 
-##### Table of Contents
-- [Introduction](#introduction)
-- [1. System Preparation](#prepare)
-    - [a. Preliminaries](#preliminaries)
-    - [b. Installing PHP 5.6](#php5)
-    - [c. PHP Version Check](#phpcheck)
-    - [d. Configure Apache](#configureapache)
-- [2. MolProbity Installation](#install)
-    - [a. Acquiring MolProbity](#acquiremolprobity)
-    - [b. Run install_via_bootstrap.sh](#runbootstrap)
-    - [c. Run setup.sh to configure the webserver](#runsetup)
-- [3. Providing System or Local Webservice](#service)
-    - [a. Webservices](#webservice)
-    - [b. Webserver/PHP configuration](#phpconfig)
+This is a fork of MolProbity optimized for modern systems (Ubuntu 24.04+) and featuring a critical fix for a long-standing Phenix buffer overflow bug.
+
+---
+
+# MolProbity Installation Guide (Developer Build)
+
+**System:** Ubuntu 24.04 (Noble Numbat)  
+**Python Version:** 3.10 (Required for modern syntax usage)  
+**Method:** Source Bootstrap with C++ Security Patch
 
 
-<a name="introduction"></a>
-## Introduction
 
-MolProbity website source and installation instructions are provided with the
-cautionary restriction and explicit understanding that user deployment occur
-only on individual machines and restricted access private networks.
-This code is not intended for deployment on world accessible public sites.
+## 1. Prepare the Workspace
 
-We recommend that users consider an installation in
-user space as opposed to a systemwide installation and invoke molprobity
-as a local app using a lightweight user based web server (such as
-php -S localhost:8000 provided with the php-cli package) as opposed to the
-systemwide web server (eg apache.)
+Start with a clean directory to avoid environment conflicts.
 
-Installation is fairly straightforward but will probably require some system
-administration background.  The most notable wrinkle is the need to install
-an older version of PHP (PHP5.6) as the default PHP interpreter.
-
-MolProbity installation is accomplished with a downloadable script which
-fetches required sources and data into a specifically created empty directory
-as opposed to cloning this repository. 
-
-We describe our installation recipe in three parts:
-1. System preparation (mostly installing php 5.6)
-2. Molprobity installation using our standalone script placed at the top of
-an empty directory created specifically for the installation
-3. Providing system and local webservices. These notes are mostly specific
-to Linux Ubuntu/Debian systems but can be adapted to other platforms.
-
-<a name="prepare"></a>
-## 1. System Preparation:
-<a name="preliminaries"></a>
-### a. Preliminaries:
-
-Linux users should ensure that gawk is on a path that the
-server can read (gawk may need to be installed). Also, python-dev is a
-one of MolProbity's cctbx dependencies, and may need to be installed.
-The build script will warn you about this if it fails for this reason.
-32 BIT Linux is not supported.
-
-Mac users should know that the Xcode app and xcode commandline tools may be
-needed to install MolProbity.
-<a name="php5"></a>
-### b. Installing PHP 5.6
-
-MolProbity requires the older 5.6 version of PHP to work.
-
-```
-apt-get install -y software-properties-common
-sudo add-apt-repository ppa:ondrej/php
-sudo apt update
-sudo apt upgrade
-sudo apt install -y php5.6
+```bash
+mkdir ~/molprobity_work
+cd ~/molprobity_work
 ```
 
-```
-apt-get install php5.6-gd php5.6-mysql php5.6-imap php5.6-curl
-php5.6-intl php5.6-pspell php5.6-recode php5.6-sqlite3 php5.6-tidy
-php5.6-xmlrpc php5.6-xsl php5.6-zip php5.6-mbstring php5.6-soap
-php5.6-opcache libicu65 php5.6-common php5.6-json php5.6-readline
-php5.6-xml libapache2-mod-php5.6 php5.6-cli 
-```
-<a name="phpcheck"></a>
-### c. PHP Version Check:
+## 2. Build MolProbity & Fix Buffer Overflow
 
-```
-php --version
-```
-<a name="configureapache"></a>
-### d. Configure Apache
-```
-sudo update-alternatives --config php
-```
-or
-```
-sudo a2enmod php5.6
-sudo service apache2 restart
-```
-See
+On modern Linux systems (Ubuntu 24+), a bug in the Phenix C++ source causes a `buffer overflow detected` crash due to `_FORTIFY_SOURCE` protections. 
 
-https://vitux.com/how-to-install-php5-php8-on-ubuntu/
+We resolve this by patching the source code **after** downloading but **before** compiling.
 
-<a name="install"></a>
-## 2. MolProbity Installation:
+```bash
+# 1. Download the build script
+wget https://raw.githubusercontent.com/cctbx/cctbx_project/master/libtbx/auto_build/bootstrap.py
 
-The MolProbity installation process is currently in flux. This is our
-recommended protocol which starts with downloading our standalone
-installation script into an empty MolProbity directory specifically
-created for the installation.
+# 2. Download the source code ONLY
+python bootstrap.py --builder=molprobity --python=310 --download-only
 
-<a name="acquiremolprobity"></a>
-### a. Acquiring MolProbity 
+# 3. APPLY THE CLEAN C++ FIX
+# This patches a hardcoded 640-byte size argument for an 81-byte buffer
+sed -i 's/std::snprintf(r, 640U/std::snprintf(r, 15U/g' modules/cctbx_project/iotbx/pdb/hierarchy.cpp
 
-First create the empty MolProbity directory (the directory that this
-README file will be in) to a location where you want it to reside.
-Note that Apache will have to see molprobity/public_html if you are
-interested in setting up a web service.
-
-Second, open a terminal and change into the empty MolProbity directory which you
-have just created. Download our installation script into your MolProbity
-directory with:
+# 4. Run the full build (Base + Build)
+python bootstrap.py --builder=molprobity --python=310 --nproc=4 base build
 ```
-wget -O install_via_bootstrap.sh https://github.com/rlabduke/MolProbity/raw/master/install_via_bootstrap.sh
-```
-Make sure that this script is at the top level of the directory where
-MolProbity is to be installed.
 
-<a name="runbootstrap"></a>
-### b. Run install_via_bootstrap.sh. 
-```
-./install_via_bootstrap.sh
-```
-The script can accept a single integer argument to set the number of processors
-to use.  We recommend 4 if possible.
-```
-./install_via_bootstrap.sh 4
-```
-This will install cctbx_project and the following needed buildlist components
-in MolProbity/modules:
+*Note: The compilation process takes 20-40 minutes.*
 
-> annlib
-> 
-> annlib_adaptbx
-> 
-> cbflib
-> 
-> ccp4io
-> 
-> ccp4io_adaptbx
-> 
-> cctbx_project
-> 
-> chem_data
-> 
-> probe
-> 
-> reduce
-> 
-> tntbx
+## 3. Activate and Configure
 
-and then will compile and configure in MolProbity/build.
+Once the build finishes, load the environment variables and run the MolProbity setup.
 
-<a name="runsetup"></a>
-### c. Run setup.sh to configure the webserver.
-```
-cd/molprobity
+```bash
+# 1. Source the environment (This activates the internal Conda env)
+source build/setpaths.sh
+
+# 2. Enter the MolProbity directory
+cd molprobity
+
+# 3. Run the configuration script
 ./setup.sh
 ```
 
-<a name="service"></a>
-## 3. Providing System or Local Webservice
+* **Webserver User:** When prompted, press `Enter` (default to current user) if running locally.
 
-<a name="webservice"></a>
-### a. Webservices
+## 4. (Important) Fix Binary Permissions
 
-If setting up a webserver, make sure that the machine's Apache
-configuration can point to the MolProbity/public_html directory.
+The contact-dot calculator (`probe`) often needs explicit executable permissions after the build.
 
-Note that it is not necessary to setup a webserver if you are only
-interested in running the command-line tools.
-
-Note that it is not necessary to set up an externally-accessible
-webserver like Apache to get MolProbity served as a website available
-only on your computer (via localhost). You will need to install
-php-cli or a similar package, then open a terminal in the MolProbity directory
-and run:
+```bash
+chmod +x ../build/bin/phenix.probe
 ```
-php -S localhost:8000
+
+## 5. Run the Server
+
+Use the built-in PHP development server for local testing.
+
+```bash
+# Ensure you are inside the 'molprobity' folder
+php -S localhost:8601
 ```
-This starts up a local userspace webserver which will continue to run until
-its process is killed.
 
-In a browser, navigate to:
+Access the site at: **[http://localhost:8601/public_html/index.php](http://localhost:8601/public_html/index.php)**
 
-http://localhost:8000/public_html/index.php 
+---
 
-you will have a functioning local MolProbity site. After finishing your
-MolProbity work and closing the browser, you can shut down the local userspace
-webservice by using a Ctl-C command to kill the process in the terminal
-where the command was invoked. 
+### Critical Bug Fix: Phenix Buffer Overflow
+This fork includes documentation and scripts to resolve a specific crash in the Phenix C++ tools (`clashscore`, `rotalyze`, `ramalyze`) encountered on systems with GLIBC 2.39+. 
 
-<a name="phpconfig"></a>
+**Symptoms Fixed:** 
+- `*** buffer overflow detected ***: terminated` errors in CLI.
+- Silent failures in the Web UI resulting in "0.00" scores or empty clash lists.
 
-### b. Webserver/PHP configuration
+The fix (Stage 3 above) patches the `iotbx::pdb::hierarchy::atom::format_atom_record` function to use conservative buffer limits (15 bytes for float fields), allowing Phenix to run safely under modern security policies.
 
-Finally it is very important to tweak webserver and PHP settings
-for proper operation. 
+---
 
-We have provided two files in public_html/, .user.ini and .htaccess,
-which attempt to preclude the need for users to do system-wide server
-reconfigurations.  In particular, .htaccess should override the global
-php.ini for an Apache MolProbity server, and .user.ini should do the
-same for a local PHP-CLI server.
+### Maintenance & Troubleshooting
 
-If that doesn't work, you may need to edit Apache settings for proper
-MolProbity performance.  The settings file is often called php.ini,
-e.g. /etc/php5/???/php.ini, but it will vary on different computers.
-We recommend setting at least:
+#### Why was my last build so fast?
+If you are rebuilding, Phenix uses an **incremental build system**. It detects that only a few files changed (like our C++ patch) and only recompiles those specific parts instead of the whole suite. 
 
-`upload_max_filesize = 50M`
+#### How to "Factory Reset" (Full Clean Build)
+If you run into strange errors and want to start truly from scratch:
+```bash
+# 1. Remove everything EXCEPT the MolProbity/ directory
+rm -rf build/ conda_base/ modules/ bootstrap.py
 
-`post_max_size = 50M`
+# 2. Re-run the installation from Step 3 above
+```
 
-Values higher than 50M may be needed for unusually large files.
+#### How to run an Incremental Update
+If you just want to refresh the build or apply a small code change:
+```bash
+python bootstrap.py --builder=molprobity --python=310 --nproc=4 base build
+```
 
-An external explanation:
-http://stackoverflow.com/questions/24377403/maximum-upload-size-in-php-and-apache
-http://stackoverflow.com/questions/2184513/php-change-the-maximum-upload-file-size
-
-It may also be appropriate to set the script memory limit, thus:
-`memory_limit = 1280M`
-
-We invite feedback on your experience with these instructions (and notes
-for different platforms) so they may be improved. Thank you for using
-MolProbity!
+---
+*For historical installation notes and Apache/PHP 5.6 configuration, see the [legacy documentation wiki](doc/legacy_notes.md).*
