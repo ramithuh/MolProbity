@@ -69,7 +69,28 @@ The contact-dot calculator (`probe`) often needs explicit executable permissions
 chmod +x ../build/bin/phenix.probe
 ```
 
-## 5. Run the Server
+## 6. One-Line Analysis (CLI)
+
+The repository now includes `molprobity-analyze.sh`, an automated tool that replicates the full MolProbity Web UI report (including the MolProbity Score) in a single command.
+
+```bash
+# Run from the repository root
+./molprobity-analyze.sh your_file.pdb
+
+# Or from outside the repository
+./MolProbity/molprobity-analyze.sh your_file.pdb
+```
+
+This script handles:
+1.  **Hydrogen Addition**: Uses `reduce` with Asn/Gln/His flips.
+2.  **All-Atom Contacts**: Calculates the official MolProbity Clashscore.
+3.  **Protein Geometry**: Analyzes Ramachandran, Rotamers, Cβ-deviations, and Cis-peptides.
+4.  **Geometry Validation**: Reports Bond and Angle outliers (>4.0σ).
+5.  **Score Calculation**: Computes the weighted **MolProbity Score**.
+
+All results and raw logs are saved to a directory named `mp_analysis_<filename>`.
+
+## 7. Run the Server
 
 Use the built-in PHP development server for local testing.
 
